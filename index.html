@@ -59,6 +59,21 @@
   .msg.lose{color:#ffd0d0}
   footer{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
   .note{font-size:12px;color:#c9cfdd}
+
+  /* Modal */
+  .modal-mask{
+    position:fixed;inset:0;background:rgba(0,0,0,.5);
+    display:none;align-items:center;justify-content:center;z-index:999;
+  }
+  .modal{
+    width:min(92vw,420px);background:#141a33;border:1px solid #2b345e;border-radius:18px;
+    box-shadow:0 20px 50px rgba(0,0,0,.4);padding:18px 16px
+  }
+  .modal h3{margin:0 0 8px 0;font-size:18px}
+  .modal p{margin:6px 0 14px 0;color:#dbe3f7}
+  .modal .ok{background:#5668ff;border:none;color:#fff;padding:10px 14px;border-radius:12px;cursor:pointer}
+  .modal .ok.win{background:var(--win)}
+  .modal .ok.lose{background:#ff784a}
 </style>
 </head>
 <body>
@@ -107,18 +122,17 @@
             </div>
             <div class="odds">
               <div class="box">
-                <div class="muted">猜大 预计赔率（奖金/下注）</div>
+                <div class="muted">猜大 预计可得奖金</div>
                 <div class="bignum" id="oddBig">—</div>
                 <div class="muted" id="probBig">成功概率：—</div>
               </div>
               <div class="box">
-                <div class="muted">猜小 预计赔率（奖金/下注）</div>
+                <div class="muted">猜小 预计可得奖金</div>
                 <div class="bignum" id="oddSmall">—</div>
                 <div class="muted" id="probSmall">成功概率：—</div>
               </div>
             </div>
             <div class="meta">
-              <div class="tag">抽水：3%（×0.97）</div>
               <div class="tag">点数：A 最小，K 最大</div>
               <div class="tag">相同点数＝平台赢</div>
             </div>
@@ -131,10 +145,7 @@
             <div class="row">
               <button class="btn primary" id="newRound">下一轮（翻面抽牌）</button>
             </div>
-            <div class="note" style="margin-top:8px">
-              下注时会先扣除下注金额；若胜，发放奖金 = 下注 × 0.97 ÷ 成功概率。<br/>
-              （期望值 ≈ -3%）
-            </div>
+            <!-- 去掉抽水/公式说明 -->
           </div>
         </div>
       </section>
@@ -147,12 +158,21 @@
     </div>
   </div>
 
+  <!-- 弹窗 -->
+  <div class="modal-mask" id="modalMask">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h3 id="modalTitle">结果</h3>
+      <p id="modalMsg">……</p>
+      <button class="ok" id="modalOK">确定</button>
+    </div>
+  </div>
+
 <script>
 (function(){
   // —— 基础数据与工具 —— //
   const SUITS = ["♠","♥","♦","♣"];
   const RANKS = [1,2,3,4,5,6,7,8,9,10,11,12,13]; // A..K
-  const HOUSE_EDGE = 0.97;
+  const HOUSE_EDGE = 0.97; // 内部使用，不在 UI 暴露
 
   const el = (id)=>document.getElementById(id);
   const fmt = (n)=> n.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
@@ -185,7 +205,23 @@
 
   // —— 游戏状态 —— //
   let deck=[], discard=[], baseCard=null, balance=1000;
-  let roundLocked = false; // 防止重复点击
+  let roundLocked = false;
+
+  // Modal
+  const modalMask = el("modalMask");
+  const modalTitle = el("modalTitle");
+  const modalMsg = el("modalMsg");
+  const modalOK = el("modalOK");
+  modalOK.addEventListener("click", closeModal);
+  function openModal(type, title, msg){
+    modalTitle.textContent = title || (type==="win"?"恭喜获胜":"很遗憾未中奖");
+    modalMsg.textContent = msg || "";
+    modalOK.classList.toggle("win", type==="win");
+    modalOK.classList.toggle("lose", type==="lose");
+    modalMask.style.display = "flex";
+  }
+  function closeModal(){ modalMask.style.display = "none"; }
+
   init();
 
   function init(){
@@ -214,7 +250,7 @@
     el("discardCount").textContent = `弃牌：${discard.length}`;
     el("balance").textContent = `￥${fmt(balance)}`;
 
-    // 计算概率与按钮可用性
+    // 计算概率与“预计可得奖金”
     updateOddsBoxes();
 
     // 控件状态
@@ -230,18 +266,25 @@
       else if(c.rank<baseCard.rank) small++;
       else equal++;
     }
-    const total = deck.length; // 玩家可见的未知空间
+    const total = deck.length;
     return {bigCount:big, smallCount:small, equalCount:equal, total};
   }
 
   function updateOddsBoxes(){
     const {bigCount, smallCount, total} = calcCounts();
+    const bet = getBet();
     const pb = total>0 ? bigCount/total : 0;
     const ps = total>0 ? smallCount/total : 0;
+
+    // 预计可得奖金 = 下注 × 0.97 ÷ 成功概率（仅展示金额，不展示公式/倍率）
+    const prizeBig   = (bet>0 && pb>0) ? bet * HOUSE_EDGE / pb : null;
+    const prizeSmall = (bet>0 && ps>0) ? bet * HOUSE_EDGE / ps : null;
+
     el("probBig").textContent   = `成功概率：${total? (pb*100).toFixed(2)+"%":"—"}`;
     el("probSmall").textContent = `成功概率：${total? (ps*100).toFixed(2)+"%":"—"}`;
-    el("oddBig").textContent   = total && pb>0 ? `× ${(HOUSE_EDGE/pb).toFixed(3)}` : "不可选";
-    el("oddSmall").textContent = total && ps>0 ? `× ${(HOUSE_EDGE/ps).toFixed(3)}` : "不可选";
+
+    el("oddBig").textContent   = prizeBig!=null ? `￥${fmt(prizeBig)}` : (pb>0 ? "请输入下注" : "不可选");
+    el("oddSmall").textContent = prizeSmall!=null ? `￥${fmt(prizeSmall)}` : (ps>0 ? "请输入下注" : "不可选");
   }
 
   function drawNextAndResolve(guess){ // guess: "big" | "small"
@@ -276,16 +319,18 @@
     else if(guess==="big")  win = (cmp===1);
     else if(guess==="small")win = (cmp===-1);
 
-    // 计算奖金：赢取金额 = 下注 × 0.97 ÷ 成功概率
+    // 计算奖金
     const prize = win ? bet * HOUSE_EDGE / p : 0;
 
-    // 结算与日志
+    // 结算与日志 + 弹窗
     setTimeout(()=>{
       if(win){
         balance += prize;
-        log(`赢 ✅  基准 ${rankLabel(baseCard.rank)} 与 抽到 ${rankLabel(drawn.rank)}，方向：${guess==='big'?'大':'小'}，获得奖金 ￥${fmt(prize)}（扣除下注￥${fmt(bet)}已先行）`, true);
+        log(`赢 ✅  基准 ${rankLabel(baseCard.rank)} 与 抽到 ${rankLabel(drawn.rank)}，方向：${guess==='big'?'大':'小'}，获得奖金 ￥${fmt(prize)}（已扣除下注￥${fmt(bet)}）`, true);
+        openModal("win","恭喜获胜",`获得奖金 ￥${fmt(prize)}（已扣除下注￥${fmt(bet)}）`);
       }else{
         log(`输 ❌  基准 ${rankLabel(baseCard.rank)} 与 抽到 ${rankLabel(drawn.rank)}，方向：${guess==='big'?'大':'小'}，相同或判断错误，损失 ￥${fmt(bet)}`, false);
+        openModal("lose","很遗憾未中奖",`损失 ￥${fmt(bet)}（已扣除下注）`);
       }
 
       // 回合收尾：旧基准入弃牌，新基准=本次抽到
@@ -327,13 +372,10 @@
     row.textContent = text;
     const logBox = el("log");
     logBox.prepend(row);
-    // 限制记录长度
     while(logBox.children.length>200) logBox.removeChild(logBox.lastChild);
   }
 
-  function toast(msg){
-    log(msg);
-  }
+  function toast(msg){ log(msg); }
 
   // —— 事件绑定 —— //
   el("guessBig").addEventListener("click", ()=>drawNextAndResolve("big"));
