@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>猜大小｜High or Low</title>
+<style>
+  :root{
+    --bg:#0f1220; --panel:#181c2f; --accent:#ffd54d; --muted:#9aa3b2; --win:#34c759; --lose:#ff3b30;
+    --card:#ffffff; --card-border:#dfe3eb; --shadow:0 10px 24px rgba(0,0,0,.25);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b0e1a,#12162a 40%,#0f1220);color:#e8ecf2;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  .wrap{max-width:980px;margin:24px auto;padding:16px}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px}
+  .title{font-weight:800;font-size:20px;letter-spacing:.3px}
+  .bank{display:flex;align-items:center;gap:8px;background:var(--panel);padding:10px 12px;border-radius:14px;box-shadow:var(--shadow)}
+  .bank .label{color:var(--muted);font-size:12px}
+  .bank .val{font-weight:700}
+  .bank button{background:#273057;border:none;color:#fff;padding:6px 10px;border-radius:10px;cursor:pointer}
+  .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+  @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+  .panel{background:var(--panel);border-radius:18px;padding:16px;box-shadow:var(--shadow)}
+  .cards{display:flex;gap:16px;align-items:center;justify-content:center;padding:10px;min-height:220px}
+  .card{
+    width:130px;height:180px;border-radius:14px;border:1px solid var(--card-border);background:var(--card);
+    color:#111;box-shadow:0 10px 24px rgba(18,22,42,.35);position:relative;user-select:none
+  }
+  .card.small{width:90px;height:130px}
+  .rank{position:absolute;left:8px;top:6px;font-weight:800}
+  .suit{position:absolute;right:8px;bottom:6px;font-size:20px}
+  .center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px}
+  .red{color:#d61f45}
+  .back{
+    background:repeating-linear-gradient(45deg,#253057,#253057 8px,#1b2649 8px,#1b2649 16px);
+    border:1px solid #405189;
+  }
+  .stack{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .stack .hint{font-size:12px;color:var(--muted)}
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+  .controls > div{background:#11162a;border-radius:14px;padding:12px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  input[type="number"]{width:120px;background:#0c1022;border:1px solid #2b345e;color:#e8ecf2;padding:8px 10px;border-radius:10px}
+  .btn{background:#2a355f;border:none;color:#fff;padding:10px 12px;border-radius:12px;cursor:pointer;font-weight:700}
+  .btn.primary{background:#5668ff}
+  .btn.big{padding:14px 16px;font-size:18px;border-radius:14px}
+  .btn.good{background:var(--win)}
+  .btn.bad{background:#ff784a}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  .odds{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  .odds .box{background:#0c1022;border:1px solid #2b345e;border-radius:12px;padding:10px 12px}
+  .muted{color:var(--muted);font-size:12px}
+  .bignum{font-weight:800;font-size:18px}
+  .meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .tag{background:#0c1022;border:1px solid #2b345e;color:#cfd6e6;padding:6px 10px;border-radius:999px;font-size:12px}
+  .log{max-height:180px;overflow:auto;padding-right:4px}
+  .msg{padding:8px 10px;border-bottom:1px dashed #2b345e;font-size:13px;color:#d7def0}
+  .msg.win{color:#b5ffd0}
+  .msg.lose{color:#ffd0d0}
+  footer{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .note{font-size:12px;color:#c9cfdd}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">猜大小｜High or Low</div>
+      <div class="bank">
+        <span class="label">余额</span>
+        <span class="val" id="balance">—</span>
+        <button id="add100">+100</button>
+        <button id="reset">重开</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- 左侧：牌桌 -->
+      <section class="panel">
+        <div class="cards">
+          <div class="stack">
+            <div class="hint">基准牌</div>
+            <div class="card" id="baseCard"></div>
+          </div>
+          <div class="stack">
+            <div class="hint">待猜牌</div>
+            <div class="card back" id="nextCardBack"></div>
+          </div>
+          <div class="stack">
+            <div class="hint">发牌堆</div>
+            <div class="card small back"></div>
+            <div class="muted" id="deckCount">剩余：—</div>
+          </div>
+          <div class="stack">
+            <div class="hint">弃牌堆</div>
+            <div class="card small back" style="filter:grayscale(.5) brightness(.8)"></div>
+            <div class="muted" id="discardCount">弃牌：—</div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div>
+            <div class="row">
+              <label class="muted">下注金额</label>
+              <input id="bet" type="number" min="1" step="1" value="100" />
+              <button class="btn" id="betPlus">+100</button>
+              <button class="btn" id="betMax">全押</button>
+            </div>
+            <div class="odds">
+              <div class="box">
+                <div class="muted">猜大 预计赔率（奖金/下注）</div>
+                <div class="bignum" id="oddBig">—</div>
+                <div class="muted" id="probBig">成功概率：—</div>
+              </div>
+              <div class="box">
+                <div class="muted">猜小 预计赔率（奖金/下注）</div>
+                <div class="bignum" id="oddSmall">—</div>
+                <div class="muted" id="probSmall">成功概率：—</div>
+              </div>
+            </div>
+            <div class="meta">
+              <div class="tag">抽水：3%（×0.97）</div>
+              <div class="tag">点数：A 最小，K 最大</div>
+              <div class="tag">相同点数＝平台赢</div>
+            </div>
+          </div>
+          <div>
+            <div class="row" style="margin-bottom:8px">
+              <button class="btn big good" id="guessBig">猜大</button>
+              <button class="btn big bad" id="guessSmall">猜小</button>
+            </div>
+            <div class="row">
+              <button class="btn primary" id="newRound">下一轮（翻面抽牌）</button>
+            </div>
+            <div class="note" style="margin-top:8px">
+              下注时会先扣除下注金额；若胜，发放奖金 = 下注 × 0.97 ÷ 成功概率。<br/>
+              （期望值 ≈ -3%）
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：记录 -->
+      <section class="panel">
+        <div class="muted" style="margin-bottom:8px">对局记录</div>
+        <div class="log" id="log"></div>
+      </section>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // —— 基础数据与工具 —— //
+  const SUITS = ["♠","♥","♦","♣"];
+  const RANKS = [1,2,3,4,5,6,7,8,9,10,11,12,13]; // A..K
+  const HOUSE_EDGE = 0.97;
+
+  const el = (id)=>document.getElementById(id);
+  const fmt = (n)=> n.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
+  const rankLabel = (r)=> ({1:"A",11:"J",12:"Q",13:"K"}[r] || String(r));
+
+  function buildDeck(){
+    const deck=[];
+    for(const s of SUITS){
+      for(const r of RANKS){
+        deck.push({suit:s, rank:r});
+      }
+    }
+    return deck;
+  }
+  function shuffle(a){
+    for(let i=a.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [a[i],a[j]]=[a[j],a[i]];
+    }
+  }
+  function cardHTML(c){
+    if(!c) return "";
+    const red = (c.suit==="♥"||c.suit==="♦")?" red":"";
+    return `
+      <div class="rank${red}">${rankLabel(c.rank)}</div>
+      <div class="center${red}">${c.suit}</div>
+      <div class="suit${red}">${c.suit}</div>
+    `;
+  }
+
+  // —— 游戏状态 —— //
+  let deck=[], discard=[], baseCard=null, balance=1000;
+  let roundLocked = false; // 防止重复点击
+  init();
+
+  function init(){
+    deck = buildDeck();
+    shuffle(deck);
+    discard = [];
+    baseCard = deck.pop();
+    balance = 1000;
+    roundLocked = false;
+    renderAll();
+  }
+
+  function renderAll(){
+    // 基准牌
+    const base = el("baseCard");
+    base.classList.remove("back");
+    base.innerHTML = cardHTML(baseCard);
+
+    // 待猜牌显示背面占位
+    const nextBack = el("nextCardBack");
+    nextBack.classList.add("back");
+    nextBack.innerHTML = "";
+
+    // 显示计数
+    el("deckCount").textContent = `剩余：${deck.length}`;
+    el("discardCount").textContent = `弃牌：${discard.length}`;
+    el("balance").textContent = `￥${fmt(balance)}`;
+
+    // 计算概率与按钮可用性
+    updateOddsBoxes();
+
+    // 控件状态
+    el("guessBig").disabled = roundLocked || calcCounts().bigCount===0;
+    el("guessSmall").disabled = roundLocked || calcCounts().smallCount===0;
+  }
+
+  function calcCounts(){
+    // 统计在当前“发牌堆”中，比基准牌大的/小的/相同的数量
+    let big=0, small=0, equal=0;
+    for(const c of deck){
+      if(c.rank>baseCard.rank) big++;
+      else if(c.rank<baseCard.rank) small++;
+      else equal++;
+    }
+    const total = deck.length; // 玩家可见的未知空间
+    return {bigCount:big, smallCount:small, equalCount:equal, total};
+  }
+
+  function updateOddsBoxes(){
+    const {bigCount, smallCount, total} = calcCounts();
+    const pb = total>0 ? bigCount/total : 0;
+    const ps = total>0 ? smallCount/total : 0;
+    el("probBig").textContent   = `成功概率：${total? (pb*100).toFixed(2)+"%":"—"}`;
+    el("probSmall").textContent = `成功概率：${total? (ps*100).toFixed(2)+"%":"—"}`;
+    el("oddBig").textContent   = total && pb>0 ? `× ${(HOUSE_EDGE/pb).toFixed(3)}` : "不可选";
+    el("oddSmall").textContent = total && ps>0 ? `× ${(HOUSE_EDGE/ps).toFixed(3)}` : "不可选";
+  }
+
+  function drawNextAndResolve(guess){ // guess: "big" | "small"
+    if(roundLocked) return;
+    const bet = getBet();
+    if(bet<=0){ toast("请输入有效下注金额"); return; }
+    if(bet>balance){ toast("余额不足"); return; }
+    if(deck.length<=0){
+      reshuffleFromDiscard();
+      if(deck.length<=0){ toast("牌堆不足，无法继续"); return; }
+    }
+
+    // 下注先扣款
+    balance -= bet;
+
+    // 基于当前可见牌堆，记录当下的成功概率（用于计算奖金）
+    const {bigCount, smallCount, total} = calcCounts();
+    const p = (guess==="big") ? (bigCount/total) : (smallCount/total);
+    if(!(p>0)){ toast("此方向没有可赢牌"); renderAll(); return; }
+
+    // 抽一张作为“待猜牌”的真值
+    const drawn = deck.pop();
+
+    // 翻开动画（简单延迟模拟）
+    roundLocked = true;
+    flipNextCardFace(drawn);
+
+    // 判定输赢
+    const cmp = (drawn.rank===baseCard.rank) ? 0 : (drawn.rank>baseCard.rank ? 1 : -1);
+    let win = false;
+    if(cmp===0){ win=false; } // 相同＝平台赢
+    else if(guess==="big")  win = (cmp===1);
+    else if(guess==="small")win = (cmp===-1);
+
+    // 计算奖金：赢取金额 = 下注 × 0.97 ÷ 成功概率
+    const prize = win ? bet * HOUSE_EDGE / p : 0;
+
+    // 结算与日志
+    setTimeout(()=>{
+      if(win){
+        balance += prize;
+        log(`赢 ✅  基准 ${rankLabel(baseCard.rank)} 与 抽到 ${rankLabel(drawn.rank)}，方向：${guess==='big'?'大':'小'}，获得奖金 ￥${fmt(prize)}（扣除下注￥${fmt(bet)}已先行）`, true);
+      }else{
+        log(`输 ❌  基准 ${rankLabel(baseCard.rank)} 与 抽到 ${rankLabel(drawn.rank)}，方向：${guess==='big'?'大':'小'}，相同或判断错误，损失 ￥${fmt(bet)}`, false);
+      }
+
+      // 回合收尾：旧基准入弃牌，新基准=本次抽到
+      discard.push(baseCard);
+      baseCard = drawn;
+
+      // 弃牌达 25 重洗
+      if(discard.length>=25){ reshuffleFromDiscard(); }
+
+      roundLocked = false;
+      renderAll();
+    }, 450);
+  }
+
+  function reshuffleFromDiscard(){
+    // 将弃牌堆与“当前发牌堆”合并重洗（不包含台面上的基准牌）
+    const merged = deck.concat(discard);
+    if(merged.length===0) return;
+    shuffle(merged);
+    deck = merged;
+    discard = [];
+    log(`🔄 弃牌达 25 或需要补牌，已与发牌堆合并重洗（不含当前基准牌）。`);
+  }
+
+  function flipNextCardFace(card){
+    const box = el("nextCardBack");
+    box.classList.remove("back");
+    box.innerHTML = cardHTML(card);
+  }
+
+  function getBet(){
+    const v = Number(el("bet").value || 0);
+    return Math.max(0, Math.floor(v));
+  }
+
+  function log(text, winFlag){
+    const row = document.createElement("div");
+    row.className = "msg" + (winFlag===true?" win": (winFlag===false?" lose":""));
+    row.textContent = text;
+    const logBox = el("log");
+    logBox.prepend(row);
+    // 限制记录长度
+    while(logBox.children.length>200) logBox.removeChild(logBox.lastChild);
+  }
+
+  function toast(msg){
+    log(msg);
+  }
+
+  // —— 事件绑定 —— //
+  el("guessBig").addEventListener("click", ()=>drawNextAndResolve("big"));
+  el("guessSmall").addEventListener("click", ()=>drawNextAndResolve("small"));
+
+  el("newRound").addEventListener("click", ()=>{
+    // 手动进入下一轮：翻面动画效果（仅重置占位），不抽牌
+    roundLocked = false;
+    const nextBack = el("nextCardBack");
+    nextBack.classList.add("back");
+    nextBack.innerHTML = "";
+  });
+
+  el("reset").addEventListener("click", ()=>{
+    init();
+    log("🔁 游戏已重开。");
+  });
+
+  el("add100").addEventListener("click", ()=>{
+    balance += 100;
+    renderAll();
+  });
+
+  el("betPlus").addEventListener("click", ()=>{
+    el("bet").value = String(getBet()+100);
+    updateOddsBoxes();
+  });
+
+  el("betMax").addEventListener("click", ()=>{
+    el("bet").value = String(Math.max(1, Math.floor(balance)));
+    updateOddsBoxes();
+  });
+
+  el("bet").addEventListener("input", updateOddsBoxes);
+
+})();
+</script>
+</body>
+</html>
