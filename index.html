@@ -382,11 +382,24 @@
   el("guessSmall").addEventListener("click", ()=>drawNextAndResolve("small"));
 
   el("newRound").addEventListener("click", ()=>{
-    // 手动进入下一轮：翻面动画效果（仅重置占位），不抽牌
-    roundLocked = false;
-    const nextBack = el("nextCardBack");
-    nextBack.classList.add("back");
-    nextBack.innerHTML = "";
+      // 下一张：抽一张牌翻面，并将其移动到基准牌位置，弃掉原基准牌
+      if(roundLocked) return;
+      if(deck.length<=0){
+        reshuffleFromDiscard();
+        if(deck.length<=0){ toast("牌堆不足，无法继续"); return; }
+      }
+      const drawn = deck.pop();
+      // 翻开动画（简单延迟模拟）
+      roundLocked = true;
+      flipNextCardFace(drawn);
+      setTimeout(()=>{
+        discard.push(baseCard);
+        baseCard = drawn;
+        // 弃牌达 25 重洗
+        if(discard.length>=25){ reshuffleFromDiscard(); }
+        roundLocked = false;
+        renderAll();
+      }, 450);
   });
 
   el("reset").addEventListener("click", ()=>{
